@@ -86,7 +86,7 @@ rand = { version = "0.9.1", default-features = false, features = [
     "std_rng",
     "thread_rng",
 ] }
-criterion = { workspace = true, default-features = false }
+criterion = { workspace = true, default-features = false, features = ["async_tokio"] }
 tempfile = "3.3"
 arrow = { workspace = true, features = ["prettyprint"] }
 futures = "0.3.31"
@@ -112,3 +112,8 @@ harness = false
 [[bench]]
 name = "encoder"
 harness = false
+
+[[bench]]
+name = "async_avro_reader"
+harness = false
+required-features = ["async"]
