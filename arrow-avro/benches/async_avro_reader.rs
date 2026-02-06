@@ -19,6 +19,7 @@
 
 use arrow_array::RecordBatch;
 use arrow_avro::reader::AsyncAvroFileReader;
+use arrow_avro::schema::AvroSchema;
 use criterion::{Criterion, criterion_group, criterion_main};
 use futures::TryStreamExt;
 use std::path::Path;
@@ -33,11 +34,46 @@ async fn read_avro_file(path: &Path, batch_size: usize) -> Vec<RecordBatch> {
     let file_size = file.metadata().await.unwrap().len();
     let buf_reader = BufReader::with_capacity(1024 * 1024, file);
 
+    let reader_schema = r#"
+      {
+        "type": "record",
+        "name": "NetworkDeviceEvent",
+        "fields": [
+          {
+            "name": "timestamp",
+            "type": [
+              "null",
+              {
+                "type": "record",
+                "name": "Timestamp",
+                "fields": [
+                  {
+                    "name": "seconds",
+                    "type": [
+                      "null",
+                      "long"
+                    ]
+                  },
+                  {
+                    "name": "nanos",
+                    "type": [
+                      "null",
+                      "int"
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    "#;
+
     let reader = AsyncAvroFileReader::builder(buf_reader, file_size, batch_size)
+        .with_reader_schema(AvroSchema::new(reader_schema.into()))
         .try_build()
         .await
         .unwrap();
-
     reader.try_collect().await.unwrap()
 }
 
@@ -53,7 +89,7 @@ fn bench_async_avro_reader(c: &mut Criterion) {
 
     group.bench_function("read_network_device_events", |b| {
         b.to_async(&rt)
-            .iter_with_large_drop(|| read_avro_file(&path, 1024));
+            .iter_with_large_drop(|| read_avro_file(&path, 8192));
     });
 
     group.finish();
