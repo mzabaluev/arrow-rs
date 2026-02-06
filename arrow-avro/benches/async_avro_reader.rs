@@ -25,7 +25,7 @@ use futures::TryStreamExt;
 use std::path::Path;
 use tokio::fs::File;
 use tokio::io::BufReader;
-use tokio::runtime::Runtime;
+use tokio::runtime;
 
 const TEST_FILE: &str = "test/data/network-device-events-0.avro";
 
@@ -78,7 +78,7 @@ async fn read_avro_file(path: &Path, batch_size: usize) -> Vec<RecordBatch> {
 }
 
 fn bench_async_avro_reader(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
+    let rt = runtime::Builder::new_current_thread().build().unwrap();
 
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(TEST_FILE);
     if !path.exists() {
