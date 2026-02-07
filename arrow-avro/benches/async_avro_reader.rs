@@ -29,48 +29,74 @@ use tokio::runtime;
 
 const TEST_FILE: &str = "test/data/network-device-events-0.avro";
 
-async fn read_avro_file(path: &Path, batch_size: usize) -> Vec<RecordBatch> {
+const BATCH_SIZE: usize = 8192;
+
+const READER_SCHEMA_NULLABLE: &str = r#"
+    {
+        "type": "record",
+        "name": "NetworkDeviceEvent",
+        "fields": [
+            {
+                "name": "timestamp",
+                "type": [
+                    "null",
+                    {
+                        "type": "record",
+                        "name": "Timestamp",
+                        "fields": [
+                            {
+                                "name": "seconds",
+                                "type": ["null", "long"]
+                            },
+                            {
+                                "name": "nanos",
+                                "type": ["null", "int"]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+"#;
+
+const READER_SCHEMA_NON_NULL: &str = r#"
+    {
+        "type": "record",
+        "name": "NetworkDeviceEvent",
+        "fields": [
+            {
+                "name": "timestamp",
+                "type": {
+                    "type": "record",
+                    "name": "Timestamp",
+                    "fields": [
+                        {
+                            "name": "seconds",
+                            "type": "long"
+                        },
+                        {
+                            "name": "nanos",
+                            "type": "int"
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+"#;
+
+async fn read_avro_file(
+    path: &Path,
+    batch_size: usize,
+    reader_schema: AvroSchema,
+) -> Vec<RecordBatch> {
     let file = File::open(path).await.unwrap();
     let file_size = file.metadata().await.unwrap().len();
     let buf_reader = BufReader::with_capacity(1024 * 1024, file);
 
-    let reader_schema = r#"
-      {
-        "type": "record",
-        "name": "NetworkDeviceEvent",
-        "fields": [
-          {
-            "name": "timestamp",
-            "type": [
-              "null",
-              {
-                "type": "record",
-                "name": "Timestamp",
-                "fields": [
-                  {
-                    "name": "seconds",
-                    "type": [
-                      "null",
-                      "long"
-                    ]
-                  },
-                  {
-                    "name": "nanos",
-                    "type": [
-                      "null",
-                      "int"
-                    ]
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      }
-    "#;
-
     let reader = AsyncAvroFileReader::builder(buf_reader, file_size, batch_size)
-        .with_reader_schema(AvroSchema::new(reader_schema.into()))
+        .with_reader_schema(reader_schema)
         .try_build()
         .await
         .unwrap();
@@ -87,9 +113,16 @@ fn bench_async_avro_reader(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("async_avro_reader");
 
-    group.bench_function("read_network_device_events", |b| {
+    let reader_schema = AvroSchema::new(READER_SCHEMA_NULLABLE.into());
+    group.bench_function("project_nullable", |b| {
         b.to_async(&rt)
-            .iter_with_large_drop(|| read_avro_file(&path, 8192));
+            .iter_with_large_drop(|| read_avro_file(&path, BATCH_SIZE, reader_schema.clone()));
+    });
+
+    let reader_schema = AvroSchema::new(READER_SCHEMA_NON_NULL.into());
+    group.bench_function("project_non_null", |b| {
+        b.to_async(&rt)
+            .iter_with_large_drop(|| read_avro_file(&path, BATCH_SIZE, reader_schema.clone()));
     });
 
     group.finish();
