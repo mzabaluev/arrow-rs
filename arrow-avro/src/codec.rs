@@ -633,14 +633,20 @@ pub enum Tz {
     Utc,
 }
 
-impl Display for Tz {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Tz::OffsetZero => write!(f, "+00:00"),
-            Tz::Utc => write!(f, "UTC"),
+    impl Tz {
+        pub fn as_str(&self) -> &'static str {
+            match self {
+                Self::OffsetZero => "+00:00",
+                Self::Utc => "UTC",
+            }
         }
     }
-}
+
+    impl Display for Tz {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str(self.as_str())
+        }
+    }
 
 /// An Avro encoding
 ///
