@@ -633,20 +633,21 @@ pub enum Tz {
     Utc,
 }
 
-    impl Tz {
-        pub fn as_str(&self) -> &'static str {
-            match self {
-                Self::OffsetZero => "+00:00",
-                Self::Utc => "UTC",
-            }
+impl Tz {
+    /// Returns the string identifier for this timezone representation
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::OffsetZero => "+00:00",
+            Self::Utc => "UTC",
         }
     }
+}
 
-    impl Display for Tz {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            f.write_str(self.as_str())
-        }
+impl Display for Tz {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
     }
+}
 
 /// An Avro encoding
 ///
