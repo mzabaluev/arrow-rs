@@ -755,15 +755,15 @@ impl Codec {
             Self::TimeMicros => DataType::Time64(TimeUnit::Microsecond),
             Self::TimestampMillis(tz) => DataType::Timestamp(
                 TimeUnit::Millisecond,
-                tz.as_ref().map(|tz| tz.to_string().into()),
+                tz.as_ref().map(|tz| tz.as_str().into()),
             ),
             Self::TimestampMicros(tz) => DataType::Timestamp(
                 TimeUnit::Microsecond,
-                tz.as_ref().map(|tz| tz.to_string().into()),
+                tz.as_ref().map(|tz| tz.as_str().into()),
             ),
             Self::TimestampNanos(tz) => DataType::Timestamp(
                 TimeUnit::Nanosecond,
-                tz.as_ref().map(|tz| tz.to_string().into()),
+                tz.as_ref().map(|tz| tz.as_str().into()),
             ),
             Self::Interval => DataType::Interval(IntervalUnit::MonthDayNano),
             Self::Fixed(size) => DataType::FixedSizeBinary(*size),
