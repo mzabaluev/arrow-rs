@@ -1168,6 +1168,8 @@ impl ReaderBuilder {
     }
 
     /// Sets the timezone representation for Avro timestamp fields.
+    ///
+    /// The default is `Tz::OffsetZero`, meaning the "+00:00" time zone ID.
     pub fn with_tz(mut self, tz: Tz) -> Self {
         self.use_tz = tz;
         self
