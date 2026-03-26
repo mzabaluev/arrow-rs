@@ -44,7 +44,7 @@ mod store;
 
 use crate::errors::AvroError;
 #[cfg(feature = "object_store")]
-pub use store::AvroObjectReader;
+pub use store::{AvroObjectReader, ObjectStoreReader};
 
 enum FetchNextBehaviour {
     /// Initial read: scan for sync marker, then move to decoding blocks
