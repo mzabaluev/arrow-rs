@@ -17,11 +17,14 @@
 
 use crate::errors::AvroError;
 use bytes::Bytes;
-use futures::FutureExt;
 use futures::future::BoxFuture;
+use futures::stream::BoxStream;
+use futures::{FutureExt, StreamExt, TryStreamExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
+use tokio_util::io::ReaderStream;
+
 use std::io::SeekFrom;
 use std::ops::Range;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 /// The asynchronous interface used by [`super::AsyncAvroFileReader`] to read avro files
 ///
@@ -37,6 +40,11 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 ///
 /// [`tokio::fs::File`]: https://docs.rs/tokio/latest/tokio/fs/struct.File.html
 pub trait AsyncFileReader: Send {
+    fn get_stream(
+        &mut self,
+        range: Range<u64>,
+    ) -> BoxFuture<'_, Result<BoxStream<'_, Result<Bytes, AvroError>>, AvroError>>;
+
     /// Retrieve the bytes in `range`
     fn get_bytes(&mut self, range: Range<u64>) -> BoxFuture<'_, Result<Bytes, AvroError>>;
 
@@ -61,6 +69,13 @@ pub trait AsyncFileReader: Send {
 
 /// This allows Box<dyn AsyncFileReader + '_> to be used as an AsyncFileReader,
 impl AsyncFileReader for Box<dyn AsyncFileReader + '_> {
+    fn get_stream(
+        &mut self,
+        range: Range<u64>,
+    ) -> BoxFuture<'_, Result<BoxStream<'_, Result<Bytes, AvroError>>, AvroError>> {
+        self.as_mut().get_stream(range)
+    }
+
     fn get_bytes(&mut self, range: Range<u64>) -> BoxFuture<'_, Result<Bytes, AvroError>> {
         self.as_mut().get_bytes(range)
     }
@@ -74,6 +89,23 @@ impl AsyncFileReader for Box<dyn AsyncFileReader + '_> {
 }
 
 impl<T: AsyncRead + AsyncSeek + Unpin + Send> AsyncFileReader for T {
+    fn get_stream(
+        &mut self,
+        range: Range<u64>,
+    ) -> BoxFuture<'_, Result<BoxStream<'_, Result<Bytes, AvroError>>, AvroError>> {
+        async move {
+            self.seek(SeekFrom::Start(range.start)).await?;
+
+            let ranged_reader = self.take(range.end - range.start);
+            let stream = ReaderStream::new(ranged_reader)
+                .map_err(AvroError::from)
+                .boxed();
+
+            Ok(stream)
+        }
+        .boxed()
+    }
+
     fn get_bytes(&mut self, range: Range<u64>) -> BoxFuture<'_, Result<Bytes, AvroError>> {
         async move {
             self.seek(SeekFrom::Start(range.start)).await?;
