@@ -188,8 +188,7 @@ impl<T: DataType> Encoder<T> for DictEncoder<T> {
     ///
     /// For this encoder, the indices are unencoded bytes (refer to [`Self::write_indices`]).
     fn estimated_memory_size(&self) -> usize {
-        self.interner.estimated_memory_size()
-            + self.indices.capacity() * std::mem::size_of::<usize>()
+        self.interner.estimated_memory_size() + self.indices.capacity() * std::mem::size_of::<u64>()
     }
 }
 
@@ -239,7 +238,7 @@ mod tests {
         );
 
         // Must also account for the 9 buffered indices.
-        let indices_size = 9 * std::mem::size_of::<usize>();
+        let indices_size = 9 * std::mem::size_of::<u64>();
         assert!(
             size >= empty_size + dict_entry_size + indices_size,
             "memory size {size} should include indices ({indices_size} bytes)"
@@ -264,7 +263,7 @@ mod tests {
         );
 
         // Must also account for the 100 buffered indices.
-        let indices_size = 100 * std::mem::size_of::<usize>();
+        let indices_size = 100 * std::mem::size_of::<u64>();
         assert!(
             size >= empty_size + dict_entry_size + indices_size,
             "memory size {size} should include indices ({indices_size} bytes)"
@@ -296,7 +295,7 @@ mod tests {
         );
 
         // Must also account for the 9 buffered indices.
-        let indices_size = 9 * std::mem::size_of::<usize>();
+        let indices_size = 9 * std::mem::size_of::<u64>();
         assert!(
             size >= empty_size + dict_entry_size + indices_size,
             "memory size {size} should include indices ({indices_size} bytes)"
@@ -325,7 +324,7 @@ mod tests {
         );
 
         // Must also account for the 100 buffered indices.
-        let indices_size = 100 * std::mem::size_of::<usize>();
+        let indices_size = 100 * std::mem::size_of::<u64>();
         assert!(
             size >= empty_size + dict_entry_size + indices_size,
             "memory size {size} should include indices ({indices_size} bytes)"
@@ -360,7 +359,7 @@ mod tests {
         );
 
         // Must also account for the 9 buffered indices.
-        let indices_size = 9 * std::mem::size_of::<usize>();
+        let indices_size = 9 * std::mem::size_of::<u64>();
         assert!(
             size >= empty_size + dict_entry_size + indices_size,
             "memory size {size} should include indices ({indices_size} bytes)"
@@ -392,7 +391,7 @@ mod tests {
         );
 
         // Must also account for the 100 buffered indices.
-        let indices_size = 100 * std::mem::size_of::<usize>();
+        let indices_size = 100 * std::mem::size_of::<u64>();
         assert!(
             size >= empty_size + dict_entry_size + indices_size,
             "memory size {size} should include indices ({indices_size} bytes)"
