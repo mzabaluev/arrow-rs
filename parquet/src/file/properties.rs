@@ -69,6 +69,8 @@ pub const DEFAULT_OFFSET_INDEX_DISABLED: bool = false;
 pub const DEFAULT_COERCE_TYPES: bool = false;
 /// Default value for [`WriterProperties::data_page_v2_compression_ratio_threshold`]
 pub const DEFAULT_DATA_PAGE_V2_COMPRESSION_RATIO_THRESHOLD: f64 = 1.0;
+/// Default value for [`WriterProperties::write_path_in_schema`]
+pub const DEFAULT_WRITE_PATH_IN_SCHEMA: bool = true;
 /// Default minimum chunk size for content-defined chunking: 256 KiB.
 pub const DEFAULT_CDC_MIN_CHUNK_SIZE: usize = 256 * 1024;
 /// Default maximum chunk size for content-defined chunking: 1024 KiB.
@@ -252,6 +254,7 @@ pub struct WriterProperties {
     statistics_truncate_length: Option<usize>,
     coerce_types: bool,
     content_defined_chunking: Option<CdcOptions>,
+    write_path_in_schema: bool,
     #[cfg(feature = "encryption")]
     pub(crate) file_encryption_properties: Option<Arc<FileEncryptionProperties>>,
 }
@@ -437,6 +440,14 @@ impl WriterProperties {
         self.coerce_types
     }
 
+    /// Returns `true` if the `path_in_schema` field of the `ColumnMetaData` Thrift struct
+    /// should be written.
+    ///
+    /// For more details see [`WriterPropertiesBuilder::set_write_path_in_schema`]
+    pub fn write_path_in_schema(&self) -> bool {
+        self.write_path_in_schema
+    }
+
     /// EXPERIMENTAL: Returns content-defined chunking options, or `None` if CDC is disabled.
     ///
     /// For more details see [`WriterPropertiesBuilder::set_content_defined_chunking`]
@@ -592,6 +603,7 @@ pub struct WriterPropertiesBuilder {
     statistics_truncate_length: Option<usize>,
     coerce_types: bool,
     content_defined_chunking: Option<CdcOptions>,
+    write_path_in_schema: bool,
     #[cfg(feature = "encryption")]
     file_encryption_properties: Option<Arc<FileEncryptionProperties>>,
 }
@@ -616,6 +628,7 @@ impl Default for WriterPropertiesBuilder {
             statistics_truncate_length: DEFAULT_STATISTICS_TRUNCATE_LENGTH,
             coerce_types: DEFAULT_COERCE_TYPES,
             content_defined_chunking: None,
+            write_path_in_schema: DEFAULT_WRITE_PATH_IN_SCHEMA,
             #[cfg(feature = "encryption")]
             file_encryption_properties: None,
         }
@@ -670,6 +683,7 @@ impl WriterPropertiesBuilder {
             statistics_truncate_length: self.statistics_truncate_length,
             coerce_types: self.coerce_types,
             content_defined_chunking: self.content_defined_chunking,
+            write_path_in_schema: self.write_path_in_schema,
             #[cfg(feature = "encryption")]
             file_encryption_properties: self.file_encryption_properties,
         }
@@ -882,6 +896,43 @@ impl WriterPropertiesBuilder {
     /// [`ArrowToParquetSchemaConverter::with_coerce_types`]: crate::arrow::ArrowSchemaConverter::with_coerce_types
     pub fn set_coerce_types(mut self, coerce_types: bool) -> Self {
         self.coerce_types = coerce_types;
+        self
+    }
+
+    /// EXPERIMENTAL: Should the writer emit the `path_in_schema` element of the
+    /// `ColumnMetaData` Thrift struct. Defaults to `true` via [`DEFAULT_WRITE_PATH_IN_SCHEMA`].
+    ///
+    /// Because `path_in_schema` is a field on the `ColumnMetaData`, it is repeated
+    /// `num_columns * num_rowgroups` times. Compounding this is any level of nesting or
+    /// repetition in the schema. For instance, a top-level list column named `foo` will have
+    /// a `path_in_schema` of `["foo", "list", "element"]`. A list-of-struct is even worse,
+    /// because the necessary list wrapping is repeated for each element of the struct. A
+    /// file with a deeply nested schema and many row groups can have a large percentage of the
+    /// footer taken up by this field. For example, a file of 38 row groups with a schema containing
+    /// several lists of structs containing lists had 36% of the footer taken up by `path_in_schema`.
+    /// Removing this redundant information can greatly speed up footer parsing, which is particularly
+    /// important in scenarios where one does not wish to read the entire file (e.g. point
+    /// lookups).
+    ///
+    /// <div class="warning">
+    ///
+    /// **WARNING:**
+    /// Setting this to `false` will break compatibility with Parquet readers that
+    /// still expect this field to be present. Virtually all Parquet readers (parquet-java,
+    /// Spark, arrow-cpp, pyarrow, pandas to name a few), with the exception
+    /// of the one in this crate, expect this field to be present, and will terminate execution
+    /// if it is not. This will continue to be the case unless/until the Parquet format
+    /// specification is explicitly changed to allow this field to be missing. As a consquence,
+    /// users should only set this to `false` if they have verified that any reader(s) they plan
+    /// to use can tolerate the absence of this field.
+    ///
+    /// For more context, see [GH-563].
+    ///
+    /// </div>
+    ///
+    /// [GH-563]: https://github.com/apache/parquet-format/issues/563
+    pub fn set_write_path_in_schema(mut self, write_path_in_schema: bool) -> Self {
+        self.write_path_in_schema = write_path_in_schema;
         self
     }
 
@@ -1253,6 +1304,7 @@ impl From<WriterProperties> for WriterPropertiesBuilder {
             statistics_truncate_length: props.statistics_truncate_length,
             coerce_types: props.coerce_types,
             content_defined_chunking: props.content_defined_chunking,
+            write_path_in_schema: props.write_path_in_schema,
             #[cfg(feature = "encryption")]
             file_encryption_properties: props.file_encryption_properties,
         }
