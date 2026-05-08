@@ -31,6 +31,11 @@ use std::error::Error;
 use std::ops::Range;
 use std::sync::Arc;
 
+// Size for the channel buffer between the I/O task driving the object store client
+// and the task decoding the received chunks. This should not be too large to
+// avoid buffering too much data in memory in case the decoding task is slower
+// than the I/O task. A typical data chunk size is 8-64 KiB for HTTP backends
+// and 8 MiB for `LocalFileSystem`.
 const STREAM_BUFFER_SIZE: usize = 8;
 
 /// An implementation of an AsyncFileReader using the [`ObjectStore`] API.
