@@ -70,6 +70,11 @@ impl AvroObjectReader {
         }
     }
 
+    // If the runtime handle is provided, spawns the provided async function
+    // on the runtime to retrieve the result, and wraps the awaiting for
+    // the result in a boxed future.
+    // If no runtime handle is provided, simply invokes the closure
+    // and adapts the error type in the async result.
     fn spawn<F, O, E>(&self, f: F) -> BoxFuture<'_, Result<O, AvroError>>
     where
         F: for<'a> FnOnce(&'a Arc<dyn ObjectStore>, &'a Path) -> BoxFuture<'a, Result<O, E>>
@@ -99,6 +104,17 @@ impl AvroObjectReader {
         }
     }
 
+    // Adaptation of `spawn` for streaming results. If the runtime handle
+    // is provided, spawns the provided async function on the runtime
+    // to retrieve the stream. If the stream is successfully established,
+    // spawns a new task to drive the stream and forward the items to the
+    // consumer of the returned stream object.
+    // The two separate tasks are spawned to provide error handling at the
+    // stream establishment phase and to get internally simpler task states
+    // to work with.
+    // If no runtime handle is provided, simply invokes the closure
+    // and adapts the error type in both the stream establishment result
+    // and the resulting stream.
     fn spawn_stream<F, I, E>(
         &self,
         f: F,
