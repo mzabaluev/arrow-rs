@@ -23,10 +23,15 @@ use futures::stream::BoxStream;
 use futures::{FutureExt, StreamExt, TryFutureExt, TryStreamExt};
 use object_store::path::Path;
 use object_store::{GetOptions, GetRange, ObjectStore, ObjectStoreExt};
+use tokio::runtime::Handle;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
+
 use std::error::Error;
 use std::ops::Range;
 use std::sync::Arc;
-use tokio::runtime::Handle;
+
+const STREAM_BUFFER_SIZE: usize = 8;
 
 /// An implementation of an AsyncFileReader using the [`ObjectStore`] API.
 pub struct AvroObjectReader {
@@ -88,6 +93,62 @@ impl AvroObjectReader {
                 .boxed(),
         }
     }
+
+    fn spawn_stream<F, I, E>(
+        &self,
+        f: F,
+    ) -> BoxFuture<'_, Result<BoxStream<'_, Result<I, AvroError>>, AvroError>>
+    where
+        F: for<'a> FnOnce(
+                &'a Arc<dyn ObjectStore>,
+                &'a Path,
+            )
+                -> BoxFuture<'a, Result<BoxStream<'static, Result<I, E>>, E>>
+            + Send
+            + 'static,
+        I: Send + 'static,
+        E: Error + Send + 'static,
+    {
+        match &self.runtime {
+            Some(handle) => {
+                let path = self.path.clone();
+                let store = Arc::clone(&self.store);
+                async move {
+                    let (sender, receiver) = mpsc::channel(STREAM_BUFFER_SIZE);
+                    let mut stream = handle
+                        .spawn(async move { f(&store, &path).await })
+                        .map_ok_or_else(
+                            |e| match e.try_into_panic() {
+                                Err(e) => Err(AvroError::External(Box::new(e))),
+                                Ok(p) => std::panic::resume_unwind(p),
+                            },
+                            |res| res.map_err(|e| AvroError::General(e.to_string())),
+                        )
+                        .await?;
+                    handle.spawn(async move {
+                        while let Some(item) = stream.next().await {
+                            let send_res = sender.send(item).await;
+                            if send_res.is_err() {
+                                break;
+                            }
+                        }
+                    });
+                    Ok(ReceiverStream::new(receiver)
+                        .map_err(|e| AvroError::General(e.to_string()))
+                        .boxed())
+                }
+                .boxed()
+            }
+            None => f(&self.store, &self.path)
+                .map_ok(|stream| {
+                    stream
+                        .map_err(|e| AvroError::General(e.to_string()))
+                        .boxed()
+                })
+                .map_err(|e| AvroError::General(e.to_string()))
+                .boxed(),
+        }
+    }
 }
 
 impl AsyncFileReader for AvroObjectReader {
@@ -99,27 +160,18 @@ impl AsyncFileReader for AvroObjectReader {
         &mut self,
         range: Range<u64>,
     ) -> BoxFuture<'_, Result<BoxStream<'_, Result<Bytes, AvroError>>, AvroError>> {
-        // FIXME: can't use self.spawn here because of the signature of the returned stream.
-        // The signature has to be this way to work with the generic implementation
-        // for AsyncRead + AsyncSeek types.
-        async move {
-            let options = GetOptions {
-                range: Some(GetRange::Bounded(range)),
-                ..Default::default()
-            };
-
-            let get_result = self
-                .store
-                .get_opts(&self.path, options)
-                .await
-                .map_err(|e| AvroError::External(Box::new(e)))?;
-            let stream = get_result
-                .into_stream()
-                .map_err(|e| AvroError::External(Box::new(e)))
-                .boxed();
-            Ok(stream)
-        }
-        .boxed()
+        self.spawn_stream(|store, path| {
+            async move {
+                let options = GetOptions {
+                    range: Some(GetRange::Bounded(range)),
+                    ..Default::default()
+                };
+                let get_result = store.get_opts(path, options).await?;
+                let stream = get_result.into_stream();
+                Ok(stream)
+            }
+            .boxed()
+        })
     }
 
     fn get_byte_ranges(
